@@ -53,7 +53,7 @@ class JsonSchemaParser(CharacterLevelParser):
             self.object_stack = existing_stack
         self.last_parsed_string = ""
         self.last_non_whitespace_character = ""
-    
+
     def add_character(self, new_character: str) -> CharacterLevelParser:
         self.context.active_parser = self
         # Assumption: The top-most parser that can accept the character is the one that should accept it.
@@ -224,7 +224,6 @@ class ObjectParsingStage(enum.Enum):
     PARSING_SEPARATOR_OR_END = "ParsingSeparatorOrEnd"
     END_OBJECT = "EndObject"
 
-
 class ObjectParsingState(BaseParsingState):
     schema_object: JsonSchemaObject
     current_stage: ObjectParsingStage
@@ -241,6 +240,7 @@ class ObjectParsingState(BaseParsingState):
         self.current_key = None
         # Javascript objects represent both classes and dictionaries, so we need to know which one we are parsing
         self.is_dictionary = self.schema_object.properties is None
+        self.additional_properties = self.schema_object.additionalProperties or False
 
     def clone(self) -> 'ObjectParsingState':
         clone = ObjectParsingState(self.schema_object, self.root)
@@ -251,6 +251,7 @@ class ObjectParsingState(BaseParsingState):
         return clone
 
     def add_character(self, new_character: str) -> CharacterLevelParser:
+
         if new_character.strip() == "":
             # In object scope, whitespaces can be ignored
             return self
@@ -266,10 +267,20 @@ class ObjectParsingState(BaseParsingState):
             if new_character == '"':
                 possible_keys = None
                 if not self.is_dictionary:
-                    possible_keys = list(self.schema_object.properties.keys())
-                    possible_keys = list(
-                        set(possible_keys).difference(self.existing_keys)
+                    # When all required keys are fulfilled, and additional properties are allowed.
+                    # possbile keys should be None
+                    possible_required_keys = self.schema_object.required or []
+                    possible_required_keys = list(
+                        set(possible_required_keys).difference(self.existing_keys)
                     )
+                    if len(possible_required_keys) == 0 and self.additional_properties != False:
+                        possible_keys = None
+                    else:
+                        possible_keys = list(self.schema_object.properties.keys())
+                        possible_keys = list(
+                            set(possible_keys).difference(self.existing_keys)
+                        )
+
                 # We send require_opening_quote=True and then add_character('"') instead of require_opening_quote=False
                 # Because there is a difference between "don't need a quote" and "received it before creating the parser"
                 key_parser = StringParsingState(
@@ -284,8 +295,8 @@ class ObjectParsingState(BaseParsingState):
                 self.current_key = self.root.context.active_parser.last_parsed_string
                 self.existing_keys.append(self.current_key)
                 if self.is_dictionary:
-                    if self.schema_object.additionalProperties:
-                        value_schema = self.schema_object.additionalProperties
+                    if isinstance(self.additionalProperties, dict):
+                        value_schema = self.additionalProperties
                     else:
                         value_schema = JsonSchemaParser.ANY_JSON_OBJECT_SCHEMA
                 else:
@@ -293,7 +304,12 @@ class ObjectParsingState(BaseParsingState):
                     possible_keys = list(
                         set(possible_keys).difference(self.existing_keys)
                     )
-                    value_schema = self.schema_object.properties[self.current_key]
+                    if self.current_key in self.schema_object.properties:
+                        value_schema = self.schema_object.properties[self.current_key]
+                    elif self.additional_properties == True:
+                        value_schema = JsonSchemaParser.ANY_JSON_OBJECT_SCHEMA
+                    else:
+                        value_schema = self.additional_properties
                 self.current_key_parser = get_parser(
                     self.root, value_schema
                 )
@@ -316,6 +332,7 @@ class ObjectParsingState(BaseParsingState):
         return self
 
     def get_allowed_characters(self) -> str:
+
         possible_keys = (
             list(self.schema_object.properties.keys())
             if not self.is_dictionary
@@ -323,9 +340,11 @@ class ObjectParsingState(BaseParsingState):
         )
         required_keys = self.schema_object.required or []
         can_end = set(self.existing_keys).issuperset(required_keys)
-        can_parse_key = self.is_dictionary or set(possible_keys).difference(
-            self.existing_keys
-        )
+        can_parse_key = self.is_dictionary \
+            or self.additional_properties \
+            or set(possible_keys).difference(
+                self.existing_keys
+            )
 
         possible_characters = [c for c in WHITESPACE_CHARACTERS]
         if self.current_stage == ObjectParsingStage.START_OBJECT:

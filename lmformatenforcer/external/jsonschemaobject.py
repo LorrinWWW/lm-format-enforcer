@@ -174,6 +174,10 @@ class JsonSchemaObject(BaseModel):
     def validate_exclusive_maximum_and_exclusive_minimum(
         cls, values: Dict[str, Any]
     ) -> Any:
+
+        if not isinstance(values, dict):
+            return values
+        
         exclusive_maximum: Union[float, bool, None] = values.get('exclusiveMaximum')
         exclusive_minimum: Union[float, bool, None] = values.get('exclusiveMinimum')
 
