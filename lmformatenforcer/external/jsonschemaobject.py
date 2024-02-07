@@ -175,7 +175,7 @@ class JsonSchemaObject(BaseModel):
         cls, values: Dict[str, Any]
     ) -> Any:
 
-        if not isinstance(values, dict):
+        if isinstance(values, bool):
             return values
         
         exclusive_maximum: Union[float, bool, None] = values.get('exclusiveMaximum')
