@@ -240,7 +240,7 @@ class ObjectParsingState(BaseParsingState):
         self.current_key = None
         # Javascript objects represent both classes and dictionaries, so we need to know which one we are parsing
         self.is_dictionary = self.schema_object.properties is None
-        self.additional_properties = self.schema_object.additionalProperties or False
+        self.additional_properties = getattr(self.schema_object, 'additionalProperties', False) or False
 
     def clone(self) -> 'ObjectParsingState':
         clone = ObjectParsingState(self.schema_object, self.root)
@@ -295,8 +295,8 @@ class ObjectParsingState(BaseParsingState):
                 self.current_key = self.root.context.active_parser.last_parsed_string
                 self.existing_keys.append(self.current_key)
                 if self.is_dictionary:
-                    if isinstance(self.additionalProperties, dict):
-                        value_schema = self.additionalProperties
+                    if isinstance(self.additional_properties, dict):
+                        value_schema = self.additional_properties
                     else:
                         value_schema = JsonSchemaParser.ANY_JSON_OBJECT_SCHEMA
                 else:
